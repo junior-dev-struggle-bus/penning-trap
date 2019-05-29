@@ -5,6 +5,10 @@ const allCircles = document.querySelectorAll('.pong circle');
 const fixed = document.querySelectorAll('.fixed circle');
 const mobile = document.querySelectorAll('.mobile circle');
 const player1 = document.querySelectorAll('.player1 circle');
+const player2 = document.querySelectorAll('.player2 circle');
+
+const distanceScale = 10;//larger number slower particles
+const chargeScale = 500;//larger number faster particles
 
 function differenceVector(a, b) {
   return {
@@ -26,7 +30,7 @@ function forceVector(a, b) {
   const vec = differenceVector(a, b);
   const dist = distance(a, b);
   const normVec = {x: vec.x / dist, y: vec.y / dist};
-  const scale = -1 / (dist ** 2) * 5;
+  const scale = -1 / ((dist * distanceScale) ** 2) * chargeScale;
   return {
     x: normVec.x * scale,
     y: normVec.y * scale,
@@ -72,11 +76,38 @@ function render() {
 
 requestAnimationFrame(render);
 
-document.body.addEventListener('mousemove', ev=> {
-  const positions = [];
-  for(let e of player1) {
-    fixedLocations.get(e).y = initialFixedLocations.get(e).y + ev.y;
-    e.cy.baseVal.valueInSpecifiedUnits = fixedLocations.get(e).y;
-    positions.push(fixedLocations.get(e));
+function set_position(group, property, y) {
+  for(let e of group) {
+    fixedLocations.get(e)[property] = initialFixedLocations.get(e)[property] + y;
+    e.cy.baseVal.valueInSpecifiedUnits = fixedLocations.get(e)[property];
   }
+}
+
+function auto_player2() {
+  if(!mobileLocations.size) { return; }
+
+  const closest = {x: 0, y: 0};
+  const avg = {x: 0, y: 0};
+
+  for(let [m, mp] of mobileLocations.entries()) {
+    if(mp.x > closest.x) {
+      closest.x = mp.x;
+      closest.y = mp.y;
+    }
+    avg.x += mp.x;
+    avg.y += mp.y;
+  }
+
+  avg.x /= mobileLocations.size;
+  avg.y /= mobileLocations.size;
+  // console.log(avg.y);
+
+  set_position(player2, 'y', closest.y);
+
+  requestAnimationFrame(auto_player2);
+}
+requestAnimationFrame(auto_player2);
+
+document.body.addEventListener('mousemove', ev=> {
+  set_position(player1, 'y', ev.y);
 })
