@@ -33,22 +33,27 @@ function forceVector(a, b) {
 }
 
 const fixedLocations = [...fixed].map(f=> ({x: f.cx.baseVal.valueInSpecifiedUnits, y: f.cy.baseVal.valueInSpecifiedUnits}));
+let mobileLocations = new Map([...mobile].map(m=> ([m, {
+  x: m.cx.baseVal.valueInSpecifiedUnits,
+  y: m.cy.baseVal.valueInSpecifiedUnits,
+  dx: parseFloat(m.dataset.dx),
+  dy: parseFloat(m.dataset.dy),
+}])));
 
 function physics() {
-  // let totalEnergy = 0;
-  for(let m of mobile) {
-    const mp = {x: m.cx.baseVal.valueInSpecifiedUnits, y: m.cy.baseVal.valueInSpecifiedUnits};
+  const newMobileLocations = new Map();
+  for(let [m, mp] of mobileLocations.entries()) {
     const fv = fixedLocations.map((fp)=>forceVector(mp, fp)).reduce((p, c)=> ({x: p.x + c.x, y: p.y + c.y}), {x: 0, y: 0});
     const sv = [...mobile].filter(f=>f!==m).map((f)=>forceVector(mp, {x: f.cx.baseVal.valueInSpecifiedUnits, y: f.cy.baseVal.valueInSpecifiedUnits})).reduce((p, c)=> ({x: p.x + c.x, y: p.y + c.y}), fv);
-    // console.log({mp, fv, sv});
-    const delta = {x: sv.x + parseFloat(m.dataset.dx), y: sv.y + parseFloat(m.dataset.dy)}
-    m.dataset.dx = delta.x;
-    m.dataset.dy = delta.y;
-    m.cx.baseVal.valueInSpecifiedUnits += delta.x;
-    m.cy.baseVal.valueInSpecifiedUnits += delta.y;
-    // totalEnergy += Math.sqrt(delta.x ** 2 + delta.y ** 2);
+    const dx = mp.dx + sv.x;
+    const dy = mp.dy + sv.y;
+    const x = mp.x + dx;
+    const y = mp.y + dy;
+    newMobileLocations.set(m, {x, y, dx, dy});
+    m.cx.baseVal.valueInSpecifiedUnits = x;
+    m.cy.baseVal.valueInSpecifiedUnits = y;
   }
-  // console.log(totalEnergy);
+  mobileLocations = newMobileLocations;
 }
 
 function render() {
