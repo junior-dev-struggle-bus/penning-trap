@@ -6,9 +6,31 @@ const fixed = document.querySelectorAll('.fixed circle');
 const mobile = document.querySelectorAll('.mobile circle');
 const player1 = document.querySelectorAll('.player1 circle');
 const player2 = document.querySelectorAll('.player2 circle');
+const player1_type = 'mouse' //'mouse' or 'auto';
+const player2_type = 'auto' //'mouse' or 'auto';
 
 const distanceScale = 10;//larger number slower particles
 const chargeScale = 500;//larger number faster particles
+const physicsLoopCount = 40;//larger number smoother physics, higher CPU usage, slower frame rate
+
+const boardDimensions = {
+  minX: 0,
+  minY: 0,
+  maxX: pong.clientWidth,
+  maxY: pong.clientHeight,
+  width: pong.clientWidth,
+  height: pong.clientHeight,
+  'center-x': pong.clientWidth / 2,
+  'center-y': pong.clientHeight / 2,
+};
+
+function renderLoop(func) {
+  function renderOnce() {
+    func();
+    requestAnimationFrame(renderOnce);
+  }
+  requestAnimationFrame(renderOnce);
+}
 
 function differenceVector(a, b) {
   return {
@@ -36,15 +58,22 @@ function forceVector(a, b) {
     y: normVec.y * scale,
   };
 }
+
 const initialFixedLocations = new Map([...fixed].map(f=> ([f,{x: f.cx.baseVal.valueInSpecifiedUnits, y: f.cy.baseVal.valueInSpecifiedUnits}])));
 
 const fixedLocations = new Map([...fixed].map(f=> ([f,{x: f.cx.baseVal.valueInSpecifiedUnits, y: f.cy.baseVal.valueInSpecifiedUnits}])));
+
 let mobileLocations = new Map([...mobile].map(m=> ([m, {
   x: m.cx.baseVal.valueInSpecifiedUnits,
   y: m.cy.baseVal.valueInSpecifiedUnits,
   dx: parseFloat(m.dataset.dx),
   dy: parseFloat(m.dataset.dy),
 }])));
+
+function set_particle_position(particle, pos) {
+  particle.setAttribute('cx', pos.x);
+  particle.setAttribute('cy', pos.y);
+}
 
 function physics() {
   const newMobileLocations = new Map();
@@ -55,26 +84,20 @@ function physics() {
     const dy = mp.dy + sv.y;
     const x = mp.x + dx;
     const y = mp.y + dy;
-    if(x < 0 || y < 0 || x > 1920 || y > 1080) {
+    if(x < boardDimensions.minX || y < boardDimensions.minY || x > boardDimensions.maxX || y > boardDimensions.maxY) {
       m.parentNode.removeChild(m);
       /* count the score of a particle leaving */
       continue;
     }
     newMobileLocations.set(m, {x, y, dx, dy});
-    m.cx.baseVal.valueInSpecifiedUnits = x;
-    m.cy.baseVal.valueInSpecifiedUnits = y;
+    set_particle_position(m, {x, y});
   }
   mobileLocations = newMobileLocations;
 }
 
-function render() {
-  for(let i = 0; i < 40; i++) {
-    physics();
-  }
-  requestAnimationFrame(render);
-}
+const multiPhysics = ((loopCount = 1)=> {for(let i = 0; i < loopCount; i++) { physics(); } })
 
-requestAnimationFrame(render);
+renderLoop(multiPhysics.bind(null, physicsLoopCount));
 
 function set_position(group, property, y) {
   for(let e of group) {
@@ -83,31 +106,46 @@ function set_position(group, property, y) {
   }
 }
 
-function auto_player2() {
-  if(!mobileLocations.size) { return; }
-
-  const closest = {x: 0, y: 0};
-  const avg = {x: 0, y: 0};
-
-  for(let [m, mp] of mobileLocations.entries()) {
-    if(mp.x > closest.x) {
-      closest.x = mp.x;
-      closest.y = mp.y;
-    }
-    avg.x += mp.x;
-    avg.y += mp.y;
-  }
-
-  avg.x /= mobileLocations.size;
-  avg.y /= mobileLocations.size;
-  // console.log(avg.y);
-
-  set_position(player2, 'y', closest.y);
-
-  requestAnimationFrame(auto_player2);
+function sum_mobile_posistions() {
+  return [...mobileLocations.values()].reduce((p, c)=> ({x: p.x + c.x, y: p.y + c.y}), {x: 0, y: 0});
 }
-requestAnimationFrame(auto_player2);
 
-document.body.addEventListener('mousemove', ev=> {
-  set_position(player1, 'y', ev.y);
-})
+function average_mobile_positions() {
+  const sum_of_positions = sum_mobile_posistions();
+  const count = Math.max(mobileLocations.size, 1); // avoid div by zero
+  const avg = {
+    x: sum_of_positions.x / count,
+    y: sum_of_positions.y / count,
+  };
+  return avg;
+}
+
+function select_mobile_position(selectFunc) {
+  return [...mobileLocations.values()].reduce((p, c)=> selectFunc(p, c));
+}
+
+const selectLargeX = (a, b)=> a.x > b.x?a:b
+const selectSmallX = (a, b)=> a.x < b.x?a:b
+const selectLargeY = (a, b)=> a.y > b.y?a:b
+const selectSmallY = (a, b)=> a.y < b.y?a:b
+
+function auto_player(group, selectFunc, selectedProp) {
+  if(!mobileLocations.size) { return; }
+  const closest = select_mobile_position(selectFunc);
+  set_position(group, selectedProp, closest[selectedProp]);
+}
+
+function mouse_player(group, property) {
+  document.body.addEventListener('mousemove', ev=> set_position(group, property, ev.y));
+  set_position(group, property, boardDimensions[`center-${property}`]);
+}
+
+const playerFunctions = {
+  player1_auto: renderLoop.bind(null, auto_player.bind(null, player1, selectSmallX, 'y')),
+  player2_auto:  renderLoop.bind(null, auto_player.bind(null, player2, selectLargeX, 'y')),
+  player1_mouse:  mouse_player.bind(null, player1, 'y'),
+  player2_mouse:  mouse_player.bind(null, player2, 'y'),
+}
+
+playerFunctions[`player1_${player1_type}`]();
+playerFunctions[`player2_${player2_type}`]();
