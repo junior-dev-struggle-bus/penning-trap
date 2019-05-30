@@ -2,6 +2,11 @@
 body {
   margin: 0;
 }
+.controls {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
 </style>
 <svg class="pong" width="1920" height="1080">
   <g class="fixed" stroke="#F004" fill="transparent" stroke-width="5">
@@ -154,4 +159,10 @@ body {
     <circle cx="1000" cy="580" r="20" data-dx="0" data-dy="0" />
   </g>
 </svg>
+<div class="controls">
+<button class="start">Start</button>
+<button class="select-player" data-player="0">Not playing</button>
+<button class="select-player" data-player="1">Player 1</button>
+<button class="select-player" data-player="2">Player 2</button>
+</div>
 <script src="index.js"></script>

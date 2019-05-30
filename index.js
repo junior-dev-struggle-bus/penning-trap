@@ -3,11 +3,15 @@
 const pong = document.querySelector('.pong');
 const allCircles = document.querySelectorAll('.pong circle');
 const fixed = document.querySelectorAll('.fixed circle');
+const mobileGroup = document.querySelector('.mobile');
 const mobile = document.querySelectorAll('.mobile circle');
 const player1 = document.querySelectorAll('.player1 circle');
 const player2 = document.querySelectorAll('.player2 circle');
-const player1_type = 'mouse' //'mouse' or 'auto';
-const player2_type = 'auto' //'mouse' or 'auto';
+
+const players = {
+  1: player1,
+  2: player2,
+};
 
 const distanceScale = 10;//larger number slower particles
 const chargeScale = 500;//larger number faster particles
@@ -23,6 +27,59 @@ const boardDimensions = {
   'center-x': pong.clientWidth / 2,
   'center-y': pong.clientHeight / 2,
 };
+
+const eventHistory = [];
+
+function start() {
+  mobileLocations = new Map(initialMobileLocations.entries());
+  mobileLocations.forEach(({x, y}, m)=> {
+    mobileGroup.appendChild(m);
+    set_particle_position(m, {x, y});
+  });
+}
+
+document.querySelectorAll('.select-player').forEach((element)=> element.addEventListener('click', ({target: {dataset}})=> {
+  location.hash=`#${JSON.stringify({player: JSON.parse(dataset.player)})}`;
+}));
+
+let localOnly = true;
+function connectToEventSource() {
+  localOnly = false;
+  const evtSource = new EventSource('/sse');
+  const startMessage = postJSON.bind(null, {type: 'start'});
+  document.querySelector('.start').addEventListener('click', startMessage);
+
+  evtSource.addEventListener('mousemove', function({data}) {
+    const curTime = performance.now();
+    const {type, hrtime, now, player, x, y} = JSON.parse(data);
+    const biTime = BigInt(hrtime);
+    eventHistory.push({biTime, type, player, x, y});
+    // console.log(type, biTime);
+    const diff = curTime - now;
+    if(player > 0) {
+      set_position(players[player], 'y', y);
+    }
+  });
+
+  evtSource.addEventListener('start', function({data}) {
+    eventHistory.length = 0;
+    const curTime = performance.now();
+    const {type, hrtime, now} = JSON.parse(data);
+    const biTime = BigInt(hrtime);
+    eventHistory.push({biTime, type});
+    // console.log(type, biTime);
+    const diff = curTime - now;
+    start();
+  });
+
+  bindPlayerData();
+
+}
+
+if(window.location.host === "76.191.127.35") {
+  connectToEventSource();
+}
+
 
 function renderLoop(func) {
   function renderOnce() {
@@ -63,9 +120,16 @@ const initialFixedLocations = new Map([...fixed].map(f=> ([f,{x: f.cx.baseVal.va
 
 const fixedLocations = new Map([...fixed].map(f=> ([f,{x: f.cx.baseVal.valueInSpecifiedUnits, y: f.cy.baseVal.valueInSpecifiedUnits}])));
 
-let mobileLocations = new Map([...mobile].map(m=> ([m, {
+const initialMobileLocations = new Map([...mobile].map(m=> ([m, {
   x: m.cx.baseVal.valueInSpecifiedUnits,
   y: m.cy.baseVal.valueInSpecifiedUnits,
+  dx: parseFloat(m.dataset.dx),
+  dy: parseFloat(m.dataset.dy),
+}])));
+
+let mobileLocations = new Map([...mobile].map(m=> ([m, {
+  x: m.cx.baseVal.valueInSpecifiedUnits,
+  y: -m.cy.baseVal.valueInSpecifiedUnits, /* set negative to force offscreen */
   dx: parseFloat(m.dataset.dx),
   dy: parseFloat(m.dataset.dy),
 }])));
@@ -131,13 +195,59 @@ const selectSmallY = (a, b)=> a.y < b.y?a:b
 
 function auto_player(group, selectFunc, selectedProp) {
   if(!mobileLocations.size) { return; }
-  const closest = select_mobile_position(selectFunc);
-  set_position(group, selectedProp, closest[selectedProp]);
+  let playerGroup;
+  try {
+    playerGroup = players[JSON.parse(decodeURI(window.location.hash.slice(1))).player];
+  } catch(err) {
+
+  }
+  if(group !== playerGroup) {
+    const closest = select_mobile_position(selectFunc);
+    set_position(group, selectedProp, closest[selectedProp]);
+  }
+}
+
+async function postJSON(data) {
+  const requestHeaders = new Headers({'content-type': 'application/json'});
+  const requestOptions = { /* see https://developer.mozilla.org/en-US/docs/Web/API/Request/Request */
+    method: 'POST',/*The request method, e.g., GET, POST.*/
+    headers: requestHeaders, /*Any headers you want to add to your request, contained within a Headers object or an object literal with ByteString values.*/
+    body: JSON.stringify(Object.assign({now: performance.now()}, data)), /*Any body that you want to add to your request: this can be a Blob, BufferSource, FormData, URLSearchParams, USVString, or ReadableStream object. Note that a request using the GET or HEAD method cannot have a body.*/
+    mode: 'cors', /*The mode you want to use for the request, e.g., cors, no-cors, same-origin, or navigate. The default is cors. In Chrome the default is no-cors before Chrome 47 and same-origin starting with Chrome 47.*/
+    credentials: 'omit', /*The request credentials you want to use for the request: omit, same-origin, or include. The default is omit. In Chrome the default is same-origin before Chrome 47 and include starting with Chrome 47.*/
+    cache: 'no-store', /*The cache mode you want to use for the request.*/
+    redirect: 'error', /*The redirect mode to use: follow, error, or manual. In Chrome the default is follow (before Chrome 47 it defaulted to manual).*/
+    referrer: 'client', /*A USVString specifying no-referrer, client, or a URL. The default is client.*/
+    keepalive: false,/* not supported yet */
+  };
+  const request = new Request('/sse-post', requestOptions);
+  const fetchOptions = {
+
+  };
+  const fetchPromise = fetch(request);
+  const fetchBody = await fetchPromise;
+  const jsonPromise = fetchBody.json();
+  const jsonResult = await jsonPromise;
+}
+
+function bindPlayerData() {
+  document.body.addEventListener('mousemove', async ({x, y, type})=> await postJSON({player: JSON.parse(decodeURI(window.location.hash.slice(1))).player, x, y, type}));
 }
 
 function mouse_player(group, property) {
-  document.body.addEventListener('mousemove', ev=> set_position(group, property, ev.y));
-  set_position(group, property, boardDimensions[`center-${property}`]);
+  try {
+    document.body.addEventListener('mousemove', ({x, y})=> {
+      try {
+        set_position(players[JSON.parse(decodeURI(window.location.hash.slice(1))).player], property, y);
+      } catch(err) {
+        
+      }
+    });
+    const player = JSON.parse(decodeURI(window.location.hash.slice(1))).player;
+    set_position(players[player], property, boardDimensions[`center-${property}`]);
+  } catch(err) {
+
+  }
 }
 
 const playerFunctions = {
@@ -147,5 +257,9 @@ const playerFunctions = {
   player2_mouse:  mouse_player.bind(null, player2, 'y'),
 }
 
-playerFunctions[`player1_${player1_type}`]();
-playerFunctions[`player2_${player2_type}`]();
+if(localOnly) {
+  playerFunctions.player1_auto();
+  playerFunctions.player2_auto();
+  playerFunctions.player1_mouse();
+  document.querySelector('.start').addEventListener('click', start);
+}
